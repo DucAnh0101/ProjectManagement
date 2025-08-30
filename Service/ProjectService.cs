@@ -23,7 +23,7 @@ namespace Service
             }
             catch (Exception ex)
             {
-                throw new Exception("Lỗi khi lấy danh sách dự án.", ex);
+                throw new Exception(ex.Message);
             }
         }
 
@@ -43,13 +43,13 @@ namespace Service
                 }
                 return project;
             }
-            catch (ArgumentException)
+            catch (ArgumentException ex)
             {
-                throw new Exception("Lỗi khi tạo dự án.");
+                throw new Exception(ex.Message);
             }
             catch (Exception ex)
             {
-                throw new Exception("Lỗi khi lấy thông tin dự án.", ex);
+                throw new Exception(ex.Message);
             }
         }
 
@@ -64,13 +64,13 @@ namespace Service
             {
                 return await _projectRepository.AddProject(createProjectReqDTO);
             }
-            catch (ArgumentException)
+            catch (ArgumentException ex)
             {
-                throw new Exception("Lỗi khi tạo dự án.");
+                throw new Exception(ex.Message);
             }
             catch (Exception ex)
             {
-                throw new Exception("Lỗi khi tạo dự án.", ex);
+                throw new Exception(ex.Message);
             }
         }
 
@@ -81,22 +81,28 @@ namespace Service
                 throw new ArgumentException("ID dự án không hợp lệ.");
             }
 
+            var existingProject = await _projectRepository.GetProjectById(projectId);
+            if (existingProject == null)
+            {
+                throw new ArgumentException("Dự án không tồn tại.");
+            }
+
             if (updateProjectReqDTO == null)
             {
-                throw new ArgumentNullException(nameof(updateProjectReqDTO), "Thông tin dự án không được để trống.");
+                throw new ArgumentNullException("Thông tin dự án không được để trống.");
             }
 
             try
             {
                 return await _projectRepository.UpdateProject(projectId, updateProjectReqDTO);
             }
-            catch (ArgumentException)
+            catch (ArgumentException ex)
             {
-                throw new Exception("Lỗi khi tạo dự án.");
+                throw new Exception(ex.Message);
             }
             catch (Exception ex)
             {
-                throw new Exception("Lỗi khi cập nhật dự án.", ex);
+                throw new Exception(ex.Message);
             }
         }
 
@@ -107,17 +113,23 @@ namespace Service
                 throw new ArgumentException("ID dự án không hợp lệ.");
             }
 
+            var project = await _projectRepository.GetProjectById(projectId);
+            if (project == null)
+            {
+                throw new ArgumentException("Dự án không tồn tại.");
+            }
+
             try
             {
                 await _projectRepository.DeleteProject(projectId);
             }
-            catch (ArgumentException)
+            catch (ArgumentException ex)
             {
-                throw new Exception("Lỗi khi tạo dự án.");
+                throw new Exception(ex.Message);
             }
             catch (Exception ex)
             {
-                throw new Exception("Lỗi khi xóa dự án.", ex);
+                throw new Exception(ex.Message);
             }
         }
     }

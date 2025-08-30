@@ -1,4 +1,5 @@
 ﻿using DataAccessLayer.ReqDTO;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Service.Implements;
 
@@ -14,55 +15,107 @@ namespace Api.Controllers
             _projectService = projectService;
         }
 
-        [HttpGet]
+        [Authorize(Roles = "Admin")]
+        [HttpGet("getallproject")]
         public async Task<IActionResult> GetAllProjects()
         {
-            var projects = await _projectService.GetAllProjects();
-            return Ok(projects);
+            try
+            {
+                var projects = await _projectService.GetAllProjects();
+                return Ok(projects);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
         }
 
         [HttpGet("{projectId}")]
         public async Task<IActionResult> GetProjectById(int projectId)
         {
-            var project = await _projectService.GetProjectById(projectId);
-            if (project == null)
+            try
             {
-                return NotFound();
+                var project = await _projectService.GetProjectById(projectId);
+                if (project == null)
+                {
+                    return NotFound();
+                }
+                return Ok(project);
             }
-            return Ok(project);
+            catch (ArgumentException ex)
+            {
+                return NotFound(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
         }
 
         [HttpPost("create-project")]
         public async Task<IActionResult> AddProject([FromBody] CreateProjectReqDTO createProjectReqDTO)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+                var project = await _projectService.AddProject(createProjectReqDTO);
+                return Ok(project);
             }
-            var project = await _projectService.AddProject(createProjectReqDTO);
-            return Ok(project);
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
         }
 
         [HttpPut("update-project/{projectId}")]
         public async Task<IActionResult> UpdateProject(int projectId, [FromBody] UpdateProjectReqDTO updateProjectReqDTO)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+                var project = await _projectService.UpdateProject(projectId, updateProjectReqDTO);
+                if (project == null)
+                {
+                    return NotFound();
+                }
+                return Ok(project);
             }
-            var project = await _projectService.UpdateProject(projectId, updateProjectReqDTO);
-            if (project == null)
+            catch (ArgumentException ex)
             {
-                return NotFound();
+                return BadRequest(new { Message = ex.Message });
             }
-            return Ok(project);
+            catch (Exception ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
         }
 
         [HttpDelete("delete-project/{projectId}")]
         public async Task<IActionResult> DeleteProject(int projectId)
         {
-            await _projectService.DeleteProject(projectId);
-            return NoContent();
+            try
+            {
+                await _projectService.DeleteProject(projectId);
+                return NoContent();
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
         }
     }
 }

@@ -75,7 +75,7 @@ namespace Repository
         {
             if (createProjectReqDTO == null)
             {
-                throw new ArgumentNullException(nameof(createProjectReqDTO), "Thông tin dự án không được để trống.");
+                throw new ArgumentNullException("Thông tin dự án không được để trống.");
             }
 
             if (string.IsNullOrWhiteSpace(createProjectReqDTO.ProjectName) ||
@@ -96,13 +96,30 @@ namespace Repository
                 throw new ArgumentException("Khách hàng không tồn tại.");
             }
 
-            var projectCode = GenerateProjectCode(createProjectReqDTO.ProjectName);
+            var projectCode = GenerateProjectCode(createProjectReqDTO.ProjectName, createProjectReqDTO.ProjectType);
             var existingProjectCode = await _context.Projects
                 .AnyAsync(p => p.ProjectCode.ToLower() == projectCode.ToLower());
             if (existingProjectCode)
             {
                 throw new ArgumentException("Mã dự án đã tồn tại, vui lòng chọn tên dự án khác.");
             }
+
+            if (createProjectReqDTO.EndDate.HasValue && createProjectReqDTO.EndDate < createProjectReqDTO.StartDate)
+            {
+                throw new ArgumentException("Ngày kết thúc phải sau ngày bắt đầu.");
+            }
+
+            if (createProjectReqDTO.Budget.HasValue && createProjectReqDTO.Budget < 0)
+            {
+                throw new ArgumentException("Ngân sách không được âm.");
+            }
+
+            if (createProjectReqDTO.ProjectType != "Web" || createProjectReqDTO.ProjectType != "AI" ||
+                createProjectReqDTO.ProjectType != "Mobile" || createProjectReqDTO.ProjectType != "ERP")
+            {
+                throw new ArgumentException("Loại dự án không hợp lệ.");
+            }
+
 
             var project = new Project
             {
@@ -167,7 +184,7 @@ namespace Repository
 
             if (!string.IsNullOrWhiteSpace(updateProjectReqDTO.ProjectName))
             {
-                var newProjectCode = GenerateProjectCode(updateProjectReqDTO.ProjectName);
+                var newProjectCode = GenerateProjectCode(updateProjectReqDTO.ProjectName, updateProjectReqDTO.ProjectType);
                 var existingProjectCode = await _context.Projects
                     .AnyAsync(p => p.ProjectCode.ToLower() == newProjectCode.ToLower() && p.ProjectId != projectId);
                 if (existingProjectCode)
@@ -275,7 +292,7 @@ namespace Repository
             }
         }
 
-        private string GenerateProjectCode(string projectName)
+        private string GenerateProjectCode(string projectName, string type)
         {
             if (string.IsNullOrWhiteSpace(projectName))
             {
@@ -283,8 +300,9 @@ namespace Repository
             }
 
             var prefix = projectName.Length > 3 ? projectName.Substring(0, 3).ToUpper() : projectName.ToUpper();
+            var middle = type.Length > 3 ? type.Substring(0, 3).ToUpper() : type.ToUpper();
             var random = new Random().Next(1000, 9999);
-            return $"{prefix}-{random}";
+            return $"{prefix}-{middle}-{random}";
         }
     }
 }

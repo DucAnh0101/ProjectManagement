@@ -3,6 +3,8 @@ using DataAccessLayer.ReqDTO;
 using DataAccessLayer.ResDTO;
 using Microsoft.EntityFrameworkCore;
 using Repository.Implements;
+using System.Net;
+using System.Net.Mail;
 using System.Text.RegularExpressions;
 
 namespace Repository
@@ -14,6 +16,120 @@ namespace Repository
         public AuthRepository(ProjectManagementContext context)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
+        }
+
+        public async Task<UserGetListDTO> AdminUpdateUser(int id, AdminUpdateUserReqDTO req)
+        {
+            if (req == null)
+            {
+                throw new ArgumentNullException(nameof(req), "Thông tin cập nhật không được để trống.");
+            }
+
+            if (string.IsNullOrWhiteSpace(req.RoleSystem))
+            {
+                throw new ArgumentException("Vai trò hệ thống không được để trống.");
+            }
+
+            if (id <= 0)
+            {
+                throw new ArgumentException("ID người dùng không hợp lệ.");
+            }
+
+            if (req.RoleSystem != "Admin" && req.RoleSystem != "Member" && req.RoleSystem != "Manager")
+            {
+                throw new ArgumentException("Vai trò hệ thống không hợp lệ. Chỉ chấp nhận 'Admin', 'Member' hoặc 'Manager'.");
+            }
+
+            if (req.Department != null && req.Department.Length > 100)
+            {
+                throw new ArgumentException("Tên phòng ban không được vượt quá 100 ký tự.");
+            }
+
+            if (req.RoleSystem == "Admin" && req.IsActive == false)
+            {
+                throw new ArgumentException("Không thể vô hiệu hóa tài khoản với vai trò Admin.");
+            }
+
+            var user = await _context.Users.FirstOrDefaultAsync(a => a.UserId == id);
+
+            if (user == null)
+            {
+                throw new ArgumentException("Người dùng không tồn tại.");
+            }
+
+            user.RoleSystem = req.RoleSystem;
+            user.Department = req.Department;
+            user.IsActive = req.IsActive;
+            await _context.SaveChangesAsync();
+
+            return new UserGetListDTO
+            {
+                Username = user.Username,
+                FullName = user.FullName,
+                Email = user.Email,
+                Phone = user.Phone,
+                RoleSystem = user.RoleSystem,
+                Department = user.Department,
+                IsActive = user.IsActive
+            };
+        }
+
+        public async Task<IEnumerable<UserGetListDTO>> GetListUser()
+        {
+            var users = _context.Users
+                .Select(u => new UserGetListDTO
+                {
+                    Username = u.Username,
+                    FullName = u.FullName,
+                    Email = u.Email,
+                    Phone = u.Phone,
+                    RoleSystem = u.RoleSystem,
+                    Department = u.Department,
+                    IsActive = u.IsActive
+                }).AsEnumerable();
+
+            if (users == null)
+            {
+                throw new NullReferenceException("Không có người dùng nào trong hệ thống.");
+            }
+
+            return await Task.FromResult((IEnumerable<UserGetListDTO>)users);
+        }
+
+        public async Task<UserGetListDTO> GetUserById(int id)
+        {
+            if (id <= 0)
+            {
+                throw new ArgumentException("ID người dùng không hợp lệ.");
+            }
+
+            var u = _context.Users
+                .Where(u => u.UserId == id);
+
+            if (!u.Any())
+            {
+                throw new KeyNotFoundException("Người dùng không tồn tại.");
+            }
+
+            var user = _context.Users
+                .Where(u => u.UserId == id)
+                .Select(u => new UserGetListDTO
+                {
+                    Username = u.Username,
+                    FullName = u.FullName,
+                    Email = u.Email,
+                    Phone = u.Phone,
+                    RoleSystem = u.RoleSystem,
+                    Department = u.Department,
+                    IsActive = u.IsActive
+                }).FirstOrDefaultAsync();
+
+            if (user == null)
+            {
+                throw new ArgumentException("Người dùng không tồn tại.");
+            }
+
+            return await user;
         }
 
         public async Task<LoginResDTO> Login(LoginReqDTO req)
@@ -38,6 +154,7 @@ namespace Repository
 
             return new LoginResDTO
             {
+                UserId = user.UserId,
                 Username = user.Username,
                 FullName = user.FullName,
                 Email = user.Email,
@@ -120,6 +237,41 @@ namespace Repository
             };
         }
 
+        public Task ResetPassword(ResetPassReqDTO req)
+        {
+            if (req == null)
+            {
+                throw new ArgumentNullException("Thông tin đặt lại mật khẩu không được để trống.");
+            }
+            if (string.IsNullOrWhiteSpace(req.Username))
+            {
+                throw new ArgumentException("Tên đăng nhập không được để trống.");
+            }
+            var user = _context.Users.AsQueryable();
+            if (!string.IsNullOrWhiteSpace(req.Email) && !string.IsNullOrWhiteSpace(req.Phone))
+            {
+                user = user.Where(u => u.Username == req.Username && u.Email == req.Email && u.Phone == req.Phone);
+            }
+            else
+            {
+                throw new ArgumentException("Vui lòng cung cấp email và số điện thoại để xác thực.");
+            }
+            var existingUser = user.FirstOrDefault();
+            if (existingUser == null)
+            {
+                throw new ArgumentException("Người dùng không tồn tại hoặc thông tin xác thực không đúng.");
+            }
+
+            var newPassword = GenerateRandomPassword();
+            existingUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+
+            _context.SaveChangesAsync();
+
+            SendEmailAsync(existingUser.Email, "Reset password request", BuildResetPasswordEmailBody(existingUser.Username, newPassword));
+
+            return Task.CompletedTask;
+        }
+
         public async Task<UserUpdateResDTO> UserUpdate(int id, UserUpdateReqDTO req)
         {
             if (req == null)
@@ -188,6 +340,83 @@ namespace Repository
                 Email = user.Email,
                 Phone = user.Phone
             };
+        }
+
+        private string GenerateRandomPassword(int length = 6)
+        {
+            const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+            var rand = new Random();
+            return new string(Enumerable.Repeat(chars, length)
+                .Select(s => s[rand.Next(s.Length)]).ToArray());
+        }
+
+        private async Task SendEmailAsync(string toEmail, string subject, string body)
+        {
+            var fromEmail = "bda2k3@gmail.com";
+            var fromPassword = "buxi vval vqdf myls";
+
+            var smtpClient = new SmtpClient("smtp.gmail.com")
+            {
+                Port = 587,
+                Credentials = new NetworkCredential(fromEmail, fromPassword),
+                EnableSsl = true,
+            };
+
+            var mailMessage = new MailMessage
+            {
+                From = new MailAddress(fromEmail),
+                Subject = subject,
+                Body = body,
+                IsBodyHtml = true
+            };
+
+            mailMessage.To.Add(toEmail);
+
+            await smtpClient.SendMailAsync(mailMessage);
+        }
+        private string BuildResetPasswordEmailBody(string userName, string newPassword)
+        {
+            return $@"
+                    <html>
+                        <head>
+                            <style>
+                                body {{
+                                    font-family: Arial, sans-serif;
+                background-color: #f9f9f9;
+                padding: 20px;
+                color: #333;
+            }}
+            .container {{
+                background-color: #fff;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                max-width: 600px;
+                margin: auto;
+            }}
+            .highlight {{
+                color: #0056b3;
+                font-weight: bold;
+            }}
+            .footer {{
+                margin-top: 30px;
+                font-size: 12px;
+                color: #888;
+            }}
+            </style>
+                </head>
+                     <body>
+                        <div class='container'>
+                            <h2>🔐 Yêu cầu đặt lại mật khẩu</h2>
+                            <p>Xin chào <span class='highlight'>{userName}</span>,</p>
+                            <p>Bạn hoặc ai đó đã yêu cầu đặt lại mật khẩu cho tài khoản của bạn.</p>
+                            <p>Mật khẩu mới của bạn là:</p>
+                            <p style='font-size: 18px; font-weight: bold; color: #d9534f;'>{newPassword}</p>
+                            <p>Hãy đăng nhập và đổi mật khẩu ngay để đảm bảo an toàn.</p>
+                            <p class='footer'>Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này hoặc liên hệ bộ phận hỗ trợ.</p>
+                        </div>
+                    </body>
+        </html>";
         }
     }
 }
